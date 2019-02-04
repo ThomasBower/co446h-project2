@@ -1,0 +1,37 @@
+{
+  "name": "apache-log-ids",
+  "version": "0.0.1",
+  "description": "A tool that filters Apache log files to find suspicious log entries.",
+  "main": "processLogs.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ThomasBower/co446h-project2.git"
+  },
+  "keywords": [
+    "security",
+    "ids",
+    "apache",
+    "logs",
+    "intrusion",
+    "intrusion",
+    "detection",
+    "system",
+    "imperial",
+    "applied",
+    "network",
+    "security",
+    "coursework"
+  ],
+  "author": "Thomas Bower, Kian Mayne, Andrew Hill",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/ThomasBower/co446h-project2/issues"
+  },
+  "homepage": "https://github.com/ThomasBower/co446h-project2#readme",
+  "dependencies": {
+    "alpine": "^0.2.1"
+  }
+}
