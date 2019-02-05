@@ -2,11 +2,14 @@
 
 const Alpine = require('alpine');
 const fs = require('fs').promises;
-const { Readable, Transform } = require('stream');
+const { Readable } = require('stream');
 const readline = require('readline');
+const { fork } = require('child_process');
+
 
 const ENCODING = 'utf8';
 const NO_DATA_MESSAGE_TIMEOUT_MS = 2000;
+const NUM_THREADS = System.Environment.ProcessorCount;
 
 // Set up standard input encoding
 process.stdin.setEncoding(ENCODING);
@@ -27,7 +30,12 @@ if (process.argv.length < 1) {
 }
 
 async function readRules(rulesFile) {
-  const rawRules = await fs.readFile(process.argv[0], ENCODING);
+  const rawRules = await fs.readFile(rulesFile, ENCODING);
+  return [{
+    regexString: '.',
+    message: '[TEST RULE] Marks every item as suspicious',
+    severity: 'CRITICAL'
+  }];
 }
 
 class ApacheLogEntryStream extends Readable {
@@ -39,10 +47,26 @@ class ApacheLogEntryStream extends Readable {
   }
 
   _read(size) {
+    // Ignoring size for ease of dev
     this._lineReader.once('line', l => this.push(alpine.parseLine(l)));
   }
 }
 
 const entryStream = new ApacheLogEntryStream(process.stdin);
-let jsonPipe = new Transform({ writableObjectMode: true, transform(obj, enc, callback) { callback(null, JSON.stringify(obj) + '\n') } });
-entryStream.pipe(jsonPipe).pipe(process.stdout);
+
+readRules(process.argv[0]).then(rules => {
+  const rulePool = rules.slice(NUM_THREADS);
+  for (let i = 0; i < NUM_THREADS; i++) {
+    const rule = rules[i];
+    spawnRegexProc(rule, rulePool);
+  }
+});
+
+function spawnRegexProc(rule, pool) {
+  const ruleProc = fork('./runRegex', [rule.regexString], { stdio: [entryStream, 'inherit', 'inherit'] });
+  ruleProc.on('exit', code => {
+    if (code !== 0) console.error(`Regex proc with rule "${rule.regex}" failed with exit code ${code}.`);
+    spawnRegexProc(pool.pop(), pool);
+  });
+}
+
