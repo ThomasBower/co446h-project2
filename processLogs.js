@@ -4,6 +4,7 @@ const Alpine = require('alpine');
 const fs = require('fs').promises;
 const { Readable, Transform } = require('stream');
 const readline = require('readline');
+const path = require('path');
 
 const ENCODING = 'utf8';
 const NO_DATA_MESSAGE_TIMEOUT_MS = 2000;
@@ -41,18 +42,30 @@ class ApacheLogEntryStream extends Readable {
 }
 
 function parseRules(ruleFileString) {
-  return ruleFileString.replace(/^(#.*|\s*)\n?/gm, '') // Remove comments
+  return ruleFileString
+    .replace(/^(#.*|\s*)\n/gm, '') // Remove comments
     .replace(/\\\n/gm, ' ') // Remove escaped new lines
     .split('\n')
-    .filter(rule => /"@rx ((?:[^"\\]|\\.)*)"/g.exec(rule))
-    .map(rule => ({
-      regex: new RegExp(/"@rx ((?:[^"\\]|\\.)*)"/g.exec(rule)[1].replace(/\(\?i:/g, '(?:').replace(/\(\?i\)/g, '').replace(/\+\+/g, '+')),
-      message: /msg:'([^']+)'/ig.exec(rule) ? /msg:'([^']+)'/ig.exec(rule)[1] : '[NO MESSAGE PROVIDED]',
-      severity: /severity:'([^']+)'/ig.exec(rule) ? /severity:'([^']+)'/ig.exec(rule)[1] : '[NO SEVERITY PROVIDED]',
-    }))
-    .filter(rule => !!rule.regex);
+    .filter(line => /^SecRule .+ "@(rx|endsWith)/.test(line))
+    .map(rule => {
+      if (/"@rx ((?:[^"\\]|\\.)*)"/g.exec(rule)) {
+        return ({
+          id: /id:(\d+)/i.exec(rule) ? /id:(\d+)/ig.exec(rule)[1] : '[NO ID PROVIDED]',
+          regex: new RegExp(/"@rx ((?:[^"\\]|\\.)*)"/g.exec(rule)[1].replace(/\(\?i:/g, '(?:').replace(/\(\?i\)/g, '').replace(/\+\+/g, '+')),
+          message: /msg:'([^']+)'/ig.exec(rule) ? /msg:'([^']+)'/ig.exec(rule)[1] : '[NO MESSAGE PROVIDED]',
+          severity: /severity:'([^']+)'/ig.exec(rule) ? /severity:'([^']+)'/ig.exec(rule)[1] : '[NO SEVERITY PROVIDED]',
+        });
+      } else if (/"@endsWith/g.test(rule)) {
+        return ({
+          id: /id:(\d+)/i.exec(rule) ? /id:(\d+)/ig.exec(rule)[1] : '[NO ID PROVIDED]',
+          endsWith: /"@endsWith (.+)"/ig.exec(rule) ? /"@endsWith (.+)"/ig.exec(rule)[1] : '[ERROR]',
+          message: /msg:'([^']+)'/ig.exec(rule) ? /msg:'([^']+)'/ig.exec(rule)[1] : '[NO MESSAGE PROVIDED]',
+          severity: /severity:'([^']+)'/ig.exec(rule) ? /severity:'([^']+)'/ig.exec(rule)[1] : '[NO SEVERITY PROVIDED]',
+        });
+      }
+    })
+    .filter(r => !!r);
 }
-
 
 class ObjectToJSONTransformStream extends Transform {
   constructor() {
@@ -79,8 +92,27 @@ class RegexRuleCheckingStream extends Transform {
   }
 
   runRules(entry) {
-    return this.rules.filter(rule => rule.regex.test(entry.originalLine))
-      .map(({ message, severity }) => ({ message, severity, entry }));
+    return this.rules
+      .map(rule => {
+        const filename = entry.request.split(' ')[1].split('?')[0];
+        if (rule.regex) {
+          const matches = rule.regex.exec(entry.request);
+          return {
+            ...rule,
+            regex: rule.regex.toString(),
+            matches: matches,
+            hit: matches && matches.length > 0
+          };
+        } else if (rule.endsWith && filename.substr(-rule.endsWith.length) === rule.endsWith) {
+          return {
+            ...rule,
+            hit: true
+          };
+        }
+        return { hit: false };
+      })
+      .filter(({ hit }) => hit)
+      .map((rule) => ({ ...rule, entry }));
   }
 }
 

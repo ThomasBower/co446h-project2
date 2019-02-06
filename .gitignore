@@ -74,3 +74,6 @@ Icon
 
 # Thumbnails
 ._*
+
+# Output
+results/
