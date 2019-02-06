@@ -6,7 +6,7 @@ const { Readable, Transform } = require('stream');
 const readline = require('readline');
 
 const ENCODING = 'utf8';
-const NO_DATA_MESSAGE_TIMEOUT_MS = 200000;
+const NO_DATA_MESSAGE_TIMEOUT_MS = 2000;
 
 // Set up standard input encoding
 process.stdin.setEncoding(ENCODING);
@@ -49,18 +49,20 @@ function parseRules(ruleFileString) {
       regex: new RegExp(/"@rx ((?:[^"\\]|\\.)*)"/g.exec(rule)[1].replace(/\(\?i:/g, '(?:').replace(/\(\?i\)/g, '').replace(/\+\+/g, '+')),
       message: /msg:'([^']+)'/ig.exec(rule) ? /msg:'([^']+)'/ig.exec(rule)[1] : '[NO MESSAGE PROVIDED]',
       severity: /severity:'([^']+)'/ig.exec(rule) ? /severity:'([^']+)'/ig.exec(rule)[1] : '[NO SEVERITY PROVIDED]',
-    }));
+    }))
+    .filter(rule => !!rule.regex);
 }
 
 
-class ObjectToJSONTranformStream extends Transform {
+class ObjectToJSONTransformStream extends Transform {
   constructor() {
     super({
       writableObjectMode: true,
       transform(obj, encoding, callback) {
-        return callback(null, JSON.stringify(obj));
+        return callback(null, JSON.stringify(obj) + ',\n');
       }
     });
+    this.push('[');
   }
 }
 
@@ -77,7 +79,8 @@ class RegexRuleCheckingStream extends Transform {
   }
 
   runRules(entry) {
-    return this.rules.filter(rule => rule.regex.test(entry.originalLine));
+    return this.rules.filter(rule => rule.regex.test(entry.originalLine))
+      .map(({ message, severity }) => ({ message, severity, entry }));
   }
 }
 
@@ -87,7 +90,7 @@ function processLogs(rulesFile) {
     .then(parseRules)
     .then(rules => entryStream
       .pipe(new RegexRuleCheckingStream(rules))
-      .pipe(new ObjectToJSONTranformStream())
+      .pipe(new ObjectToJSONTransformStream())
       .pipe(process.stdout))
     .catch(err => {
       console.error('Error occurred while processing rules: ', err);
