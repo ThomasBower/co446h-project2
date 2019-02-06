@@ -22,11 +22,6 @@ const noDataMessage = setInterval(() => {
 }, NO_DATA_MESSAGE_TIMEOUT_MS);
 process.stdin.once('data', () => clearInterval(noDataMessage));
 
-if (process.argv.length < 3) {
-  console.error('No ruleset passed to log processor.');
-  process.exit();
-}
-
 class ApacheLogEntryStream extends Readable {
   constructor(input) {
     super({
@@ -46,40 +41,52 @@ function parseRules(ruleFileString) {
     .replace(/^(#.*|\s*)\n/gm, '') // Remove comments
     .replace(/\\\n/gm, ' ') // Remove escaped new lines
     .split('\n')
-    .filter(line => /^SecRule .+ "@(rx|endsWith)/.test(line))
+    .filter(line => /^SecRule .+ "@(rx|endsWith)/.test(line) && line.indexOf('chain') === -1)
     .map(rule => {
       if (/"@rx ((?:[^"\\]|\\.)*)"/g.exec(rule)) {
         return ({
-          id: /id:(\d+)/i.exec(rule) ? /id:(\d+)/ig.exec(rule)[1] : '[NO ID PROVIDED]',
+          id: /id:(\d+)/i.exec(rule) ? /id:(\d+)/ig.exec(rule)[1] : null,
           regex: new RegExp(/"@rx ((?:[^"\\]|\\.)*)"/g.exec(rule)[1].replace(/\(\?i:/g, '(?:').replace(/\(\?i\)/g, '').replace(/\+\+/g, '+')),
-          message: /msg:'([^']+)'/ig.exec(rule) ? /msg:'([^']+)'/ig.exec(rule)[1] : '[NO MESSAGE PROVIDED]',
-          severity: /severity:'([^']+)'/ig.exec(rule) ? /severity:'([^']+)'/ig.exec(rule)[1] : '[NO SEVERITY PROVIDED]',
+          message: /msg:'([^']+)'/ig.exec(rule) ? /msg:'([^']+)'/ig.exec(rule)[1] : null,
+          severity: /severity:'([^']+)'/ig.exec(rule) ? /severity:'([^']+)'/ig.exec(rule)[1] : null,
         });
       } else if (/"@endsWith/g.test(rule)) {
         return ({
-          id: /id:(\d+)/i.exec(rule) ? /id:(\d+)/ig.exec(rule)[1] : '[NO ID PROVIDED]',
-          endsWith: /"@endsWith (.+)"/ig.exec(rule) ? /"@endsWith (.+)"/ig.exec(rule)[1] : '[ERROR]',
-          message: /msg:'([^']+)'/ig.exec(rule) ? /msg:'([^']+)'/ig.exec(rule)[1] : '[NO MESSAGE PROVIDED]',
-          severity: /severity:'([^']+)'/ig.exec(rule) ? /severity:'([^']+)'/ig.exec(rule)[1] : '[NO SEVERITY PROVIDED]',
+          id: /id:(\d+)/i.exec(rule) ? /id:(\d+)/ig.exec(rule)[1] : null,
+          endsWith: getFirstMatch(/"@endsWith (\S+)"/ig, rule),
+          message: /msg:'([^']+)'/ig.exec(rule) ? /msg:'([^']+)'/ig.exec(rule)[1] : null,
+          severity: /severity:'([^']+)'/ig.exec(rule) ? /severity:'([^']+)'/ig.exec(rule)[1] : null,
         });
       }
     })
     .filter(r => !!r);
 }
 
-class ObjectToJSONTransformStream extends Transform {
+function getFirstMatch(regex, str, defaultVal = null) {
+  const matches = regex.exec(str);
+  return matches && matches.length > 0 ? matches[1] : defaultVal;
+}
+
+const severityScores = {
+  'CRITICAL': 3,
+  'ERROR': 2,
+  'WARNING': 1,
+  'NOTICE': 0
+};
+
+class ObjectToLogOutputTransformStream extends Transform {
   constructor() {
     super({
       writableObjectMode: true,
       transform(obj, encoding, callback) {
-        return callback(null, JSON.stringify(obj) + ',\n');
+        return callback(null, `${obj.entry.originalLine}"${severityScores[obj.severity || 'ERROR']}" "${obj.message || '[NO REASON FOUND]'}"\n\n`);
       }
     });
-    this.push('[');
   }
 }
 
-class RegexRuleCheckingStream extends Transform {
+
+class RuleCheckingStream extends Transform {
   constructor(rules) {
     super({
       objectMode: true,
@@ -103,7 +110,7 @@ class RegexRuleCheckingStream extends Transform {
             matches: matches,
             hit: matches && matches.length > 0
           };
-        } else if (rule.endsWith && filename.substr(-rule.endsWith.length) === rule.endsWith) {
+        } else if (rule.endsWith && filename.endsWith(rule.endsWith)) {
           return {
             ...rule,
             hit: true
@@ -116,17 +123,45 @@ class RegexRuleCheckingStream extends Transform {
   }
 }
 
-function processLogs(rulesFile) {
+class AnomalyDetectionStream extends Transform {
+  constructor() {
+    super({
+      objectMode: true,
+      transform(entry, encoding, callback) {
+        if (this.checkModel(entry)) {
+          callback(null, {
+            entry, severity: 'ERROR', message: 'Model check error'
+          });
+        }
+      }
+    })
+  }
+
+  checkModel(entry) {
+    return false;
+  }
+}
+
+function processLogs(ruleFiles) {
   const entryStream = new ApacheLogEntryStream(process.stdin);
-  fs.readFile(rulesFile, ENCODING)
+  // Apply anomaly detection
+  entryStream.pipe(new AnomalyDetectionStream())
+    .pipe(new ObjectToLogOutputTransformStream())
+    .pipe(process.stdout);
+  // Load rule files and process
+  Promise.all(ruleFiles.map(f => fs.readFile(f, ENCODING)))
+    .then(ruleSets => ruleSets.join('\n# FILE SEPARATOR #\n'))
     .then(parseRules)
-    .then(rules => entryStream
-      .pipe(new RegexRuleCheckingStream(rules))
-      .pipe(new ObjectToJSONTransformStream())
-      .pipe(process.stdout))
+    .then(rules => {
+      // Process rules
+      entryStream
+        .pipe(new RuleCheckingStream(rules))
+        .pipe(new ObjectToLogOutputTransformStream())
+        .pipe(process.stdout);
+    })
     .catch(err => {
       console.error('Error occurred while processing rules: ', err);
     });
 }
 
-processLogs(process.argv[2]);
+processLogs(process.argv.slice(2));
