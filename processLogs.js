@@ -4,6 +4,7 @@ const fs = require('fs').promises;
 const readFileSync = require('fs').readFileSync;
 const { Transform } = require('stream');
 const ApacheLogEntryStream = require('./apacheLogEntryStream');
+const FuzzySet = require('fuzzyset.js');
 
 const ENCODING = 'utf8';
 const NO_DATA_MESSAGE_TIMEOUT_MS = 2000;
@@ -62,7 +63,7 @@ class IPWhiteListTransformStream extends Transform {
     super({
       objectMode: true,
       transform(obj, encoding, callback) {
-        if(CONFIG.whitelistedIPs && !CONFIG.whitelistedIPs.includes(obj.remoteHost)) {
+        if (CONFIG.whitelistedIPs && !CONFIG.whitelistedIPs.includes(obj.remoteHost)) {
           this.push(obj);
         }
         callback();
@@ -85,45 +86,57 @@ class ObjectToLogOutputTransformStream extends Transform {
 
 
 class RuleCheckingStream extends Transform {
-  constructor(rules) {
+  constructor(rules, model) {
     super({
       objectMode: true,
       transform(entry, encoding, callback) {
-        this.runRules(entry).forEach(matchedRule => this.push(matchedRule));
-        const detectionResult = this.runAnomalyDetection(entry);
-        if (detectionResult) this.push(detectionResult);
+        this.runSignatureRules(entry);
+        this.runAnomalyDetection(entry);
         callback();
       }
     });
-    this.rules = rules;
+    this._requestsPerSecond = 0;
+    this._rules = rules;
+    this._model = model;
+    this._userAgentModel = new FuzzySet(Object.keys(model.UserAgents));
   }
 
-  runRules(entry) {
-    return this.rules
-      .map(rule => {
-        const filename = entry.request.split(' ')[1].split('?')[0];
-        if (rule.regex) {
-          const matches = rule.regex.exec(entry.request);
-          return {
-            ...rule,
-            regex: rule.regex.toString(),
-            matches: matches,
-            hit: matches && matches.length > 0
-          };
-        } else if (rule.endsWith && filename.endsWith(rule.endsWith)) {
-          return {
-            ...rule,
-            hit: true
-          };
-        }
-        return { hit: false };
-      })
-      .filter(({ hit }) => hit)
-      .map((rule) => ({ ...rule, entry }));
+  runSignatureRules(entry) {
+    return this._rules.forEach(rule => {
+      if (rule.regex) {
+        this.runRegexRule(rule, entry);
+      } else if (rule.endsWith) {
+        this.runEndsWithRule(rule, entry);
+      }
+    });
+  }
+
+  runEndsWithRule(rule, entry) {
+    if (entry.request.split(' ')[1].split('?')[0].endsWith(rule.endsWith)) {
+      this.push({
+        ...rule,
+        entry
+      });
+    }
+  }
+
+  runRegexRule(rule, entry) {
+    const matches = rule.regex.exec(entry.request);
+    if (matches && matches.length > 0) {
+      this.push({
+        ...rule,
+        regex: rule.regex.toString(),
+        matches: matches,
+      });
+    }
   }
 
   runAnomalyDetection(entry) {
-    return;
+    const ua = entry['RequestHeader User-agent'];
+    const match = this._userAgentModel.get(ua, null, 0.7);
+    if (!match || this._model.UserAgents[match[0][1]] < CONFIG.userAgentGroupThreshold) {
+      this.push({ entry, severity: 'WARNING', message: `Unusual user agent detected "${ua}"` })
+    }
   }
 }
 
@@ -133,9 +146,10 @@ function processLogs(ruleFiles) {
   Promise.all(ruleFiles.map(f => fs.readFile(f, ENCODING)))
     .then(ruleSets => ruleSets.join('\n# FILE SEPARATOR #\n'))
     .then(parseRules)
-    .then(rules => entryStream
-      .pipe(new IPWhiteListTransformStream(rules))
-      .pipe(new RuleCheckingStream(rules))
+    .then(rules => Promise.all([rules, fs.readFile('model.json', ENCODING).then(JSON.parse)]))
+    .then(([rules, model]) => entryStream
+      .pipe(new IPWhiteListTransformStream())
+      .pipe(new RuleCheckingStream(rules, model))
       .pipe(new ObjectToLogOutputTransformStream())
       .pipe(process.stdout))
     .catch(err => {
@@ -143,15 +157,8 @@ function processLogs(ruleFiles) {
     });
 }
 
-
 // Read config
-let CONFIG = {};
-try {
-  CONFIG = JSON.parse(readFileSync('config.json', ENCODING));
-} catch (err) {
-  // Don't throw errors for config file reading
-  console.error(err.name, ': ', err.message);
-}
+const CONFIG = JSON.parse(readFileSync('config.json', ENCODING));
 
 processLogs(process.argv.slice(2));
 

@@ -1,6 +1,4 @@
 {
-  "whitelistedIPs": [
-    "146.169.13.11",
-    "14.139.240.228"
-  ]
+  "whitelistedIPs": [],
+  "userAgentGroupThreshold": 10
 }
