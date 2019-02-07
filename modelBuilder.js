@@ -8,17 +8,20 @@ process.stdin.setEncoding('utf8');
 const entryStream = new ApacheLogEntryStream(process.stdin);
 
 const Model = {};
-
-const entries = [];
+const blacklistedKeys = ['originalLine'];
 
 entryStream.on('data', e => {
-  entries.push(e);
-  // console.log(e);
+  Object.keys(e).forEach(key => {
+    if (blacklistedKeys.includes(key)) return;
+    Model[key] = Model[key] || {};
+    Model[key][e[key]] = Model[key][e[key]] + 1 || 1;
+  });
 });
 
 entryStream.on('end', () => {
-  fs.writeFile('./model.json', JSON.stringify(Model))
+  const NormalisedModel = {};
+  Object.keys(Model).forEach(key =>
+    NormalisedModel[key] = Object.entries(Model[key]).map(([value, count]) => ({ value, count })));
+  fs.writeFile('./model.json', JSON.stringify(NormalisedModel))
     .catch(error => console.error('Error when saving model:', error));
-  fs.writeFile('./entries.json', JSON.stringify(entries))
-    .catch(error => console.error('Error when saving entries:', error));
 });
