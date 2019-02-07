@@ -90,6 +90,8 @@ class RuleCheckingStream extends Transform {
       objectMode: true,
       transform(entry, encoding, callback) {
         this.runRules(entry).forEach(matchedRule => this.push(matchedRule));
+        const detectionResult = this.runAnomalyDetection(entry);
+        if (detectionResult) this.push(detectionResult);
         callback();
       }
     });
@@ -119,24 +121,9 @@ class RuleCheckingStream extends Transform {
       .filter(({ hit }) => hit)
       .map((rule) => ({ ...rule, entry }));
   }
-}
 
-class AnomalyDetectionStream extends Transform {
-  constructor() {
-    super({
-      objectMode: true,
-      transform(entry, encoding, callback) {
-        if (this.checkModel(entry)) {
-          callback(null, {
-            entry, severity: 'ERROR', message: 'Model check error'
-          });
-        }
-      }
-    })
-  }
-
-  checkModel(entry) {
-    return false;
+  runAnomalyDetection(entry) {
+    return;
   }
 }
 
