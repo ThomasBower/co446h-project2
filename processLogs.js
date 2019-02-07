@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const fs = require('fs').promises;
+const readFileSync = require('fs').readFileSync;
 const { Transform } = require('stream');
 const ApacheLogEntryStream = require('./apacheLogEntryStream');
 
@@ -55,6 +56,21 @@ const severityScores = {
   'WARNING': 1,
   'NOTICE': 0
 };
+
+class IPWhiteListTransformStream extends Transform {
+  constructor() {
+    super({
+      objectMode: true,
+      transform(obj, encoding, callback) {
+        if(CONFIG.whitelistedIPs && !CONFIG.whitelistedIPs.includes(obj.remoteHost)) {
+          this.push(obj);
+        }
+        callback();
+      }
+    });
+  }
+}
+
 
 class ObjectToLogOutputTransformStream extends Transform {
   constructor() {
@@ -131,6 +147,7 @@ function processLogs(ruleFiles) {
     .then(ruleSets => ruleSets.join('\n# FILE SEPARATOR #\n'))
     .then(parseRules)
     .then(rules => entryStream
+      .pipe(new IPWhiteListTransformStream(rules))
       .pipe(new RuleCheckingStream(rules))
       .pipe(new ObjectToLogOutputTransformStream())
       .pipe(process.stdout))
@@ -139,4 +156,15 @@ function processLogs(ruleFiles) {
     });
 }
 
+
+// Read config
+let CONFIG = {};
+try {
+  CONFIG = JSON.parse(readFileSync('config.json', ENCODING));
+} catch (err) {
+  // Don't throw errors for config file reading
+  console.error(err.name, ': ', err.message);
+}
+
 processLogs(process.argv.slice(2));
+
