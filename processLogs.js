@@ -62,7 +62,7 @@ class IPWhiteListTransformStream extends Transform {
     super({
       objectMode: true,
       transform(obj, encoding, callback) {
-        if(CONFIG.whitelistedIPs && !CONFIG.whitelistedIPs.includes(obj.remoteHost)) {
+        if (CONFIG.whitelistedIPs && !CONFIG.whitelistedIPs.includes(obj.remoteHost)) {
           this.push(obj);
         }
         callback();
@@ -89,17 +89,22 @@ class RuleCheckingStream extends Transform {
     super({
       objectMode: true,
       transform(entry, encoding, callback) {
+        // requestsPerSecond update code
+        if (this._requestsPerSecond > 1000) {
+          this.push({ ...entry, severity: 'CRITICAL', message: 'Possible DDOS - Requests per second exceeds threshold' });
+        }
         this.runRules(entry).forEach(matchedRule => this.push(matchedRule));
         const detectionResult = this.runAnomalyDetection(entry);
         if (detectionResult) this.push(detectionResult);
         callback();
       }
     });
-    this.rules = rules;
+    this._requestsPerSecond = 0;
+    this._rules = rules;
   }
 
   runRules(entry) {
-    return this.rules
+    return this._rules
       .map(rule => {
         const filename = entry.request.split(' ')[1].split('?')[0];
         if (rule.regex) {
@@ -143,15 +148,8 @@ function processLogs(ruleFiles) {
     });
 }
 
-
 // Read config
-let CONFIG = {};
-try {
-  CONFIG = JSON.parse(readFileSync('config.json', ENCODING));
-} catch (err) {
-  // Don't throw errors for config file reading
-  console.error(err.name, ': ', err.message);
-}
+const CONFIG = JSON.parse(readFileSync('config.json', ENCODING));
 
 processLogs(process.argv.slice(2));
 
