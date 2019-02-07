@@ -126,21 +126,14 @@ class AnomalyDetectionStream extends Transform {
 
 function processLogs(ruleFiles) {
   const entryStream = new ApacheLogEntryStream(process.stdin);
-  // Apply anomaly detection
-  entryStream.pipe(new AnomalyDetectionStream())
-    .pipe(new ObjectToLogOutputTransformStream())
-    .pipe(process.stdout);
   // Load rule files and process
   Promise.all(ruleFiles.map(f => fs.readFile(f, ENCODING)))
     .then(ruleSets => ruleSets.join('\n# FILE SEPARATOR #\n'))
     .then(parseRules)
-    .then(rules => {
-      // Process rules
-      entryStream
-        .pipe(new RuleCheckingStream(rules))
-        .pipe(new ObjectToLogOutputTransformStream())
-        .pipe(process.stdout);
-    })
+    .then(rules => entryStream
+      .pipe(new RuleCheckingStream(rules))
+      .pipe(new ObjectToLogOutputTransformStream())
+      .pipe(process.stdout))
     .catch(err => {
       console.error('Error occurred while processing rules: ', err);
     });
