@@ -1,19 +1,24 @@
 #!/usr/bin/env node
 
-const readline = require('readline');
+const ApacheLogEntryStream = require('./apacheLogEntryStream');
+const fs = require('fs').promises;
 
-const rl = readline.createInterface({input: process.stdin});
+// Set up standard input encoding
+process.stdin.setEncoding('utf8');
+const entryStream = new ApacheLogEntryStream(process.stdin);
 
-const dict = {};
+const Model = {};
 
-rl.on('line', l => {
-  l = l.trim();
-  if (!dict[l]) dict[l] = 0;
-  dict[l]++;
+const entries = [];
+
+entryStream.on('data', e => {
+  entries.push(e);
+  // console.log(e);
 });
 
-rl.on('close', () => {
-  Object.entries(dict)
-    .sort(([_, c1], [__, c2]) => c2 - c1)
-    .map(([ip, count]) => console.log(`${ip}: ${count}`));
+entryStream.on('end', () => {
+  fs.writeFile('./model.json', JSON.stringify(Model))
+    .catch(error => console.error('Error when saving model:', error));
+  fs.writeFile('./entries.json', JSON.stringify(entries))
+    .catch(error => console.error('Error when saving entries:', error));
 });
