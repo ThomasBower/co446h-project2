@@ -89,18 +89,32 @@ class RuleCheckingStream extends Transform {
     super({
       objectMode: true,
       transform(entry, encoding, callback) {
-        // requestsPerSecond update code
-        if (this._requestsPerSecond > 1000) {
-          this.push({ ...entry, severity: 'CRITICAL', message: 'Possible DDOS - Requests per second exceeds threshold' });
-        }
+        this.ddosCheck(entry);
+        // if (this._requestsPerSecond > 1000) {
+        //   this.push({ ...entry, severity: 'CRITICAL', message: 'Possible DDOS - Requests per second exceeds threshold' });
+        // }
         this.runRules(entry).forEach(matchedRule => this.push(matchedRule));
         const detectionResult = this.runAnomalyDetection(entry);
         if (detectionResult) this.push(detectionResult);
         callback();
       }
     });
-    this._requestsPerSecond = 0;
+    this._countRequestsSeenThisSecond = 0;
+    this._previousEntry = null;
     this._rules = rules;
+  }
+
+  // Assumes the timestamp is accurate to the nearest second
+  ddosCheck(entry) {
+    if(this._previousEntry && this._previousEntry.time === entry.time) {
+      this._countRequestsSeenThisSecond++;
+    } else {
+      if (this._countRequestsSeenThisSecond > CONFIG.maxRequestsPerSecond) {
+        this.push({...this._previousEntry, severity: 'CRITICAL', message: `Possible DDoS - ${this._countRequestsSeenThisSecond} requests per second.` })
+      }
+      this._countRequestsSeenThisSecond = 1;
+    }
+    this._previousEntry = entry;
   }
 
   runRules(entry) {

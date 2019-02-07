@@ -1,4 +1,4 @@
 {
   "whitelistedIPs": [],
-  "maxRequestsPerSecond": 1000
+  "maxRequestsPerSecond": 1
 }
