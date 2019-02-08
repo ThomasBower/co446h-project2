@@ -2,6 +2,7 @@
 
 const fs = require('fs').promises;
 const readFileSync = require('fs').readFileSync;
+const path = require('path');
 const { Transform } = require('stream');
 const createLogObjStream = require('./createLogObjStream');
 const FuzzySet = require('fuzzyset.js');
@@ -92,8 +93,9 @@ class RuleCheckingStream extends Transform {
       transform(entry, encoding, callback) {
         this.runSignatureRules(entry);
         if (CONFIG.enableAnomalyDetection) {
-          this.ddosCheck(entry);
-          this.runAnomalyDetection(entry);
+          // this.ddosCheck(entry);
+          // this.runUserAgentAnomalyDetection(entry);
+          this.runFilesizeAnomalyDetection(entry);
         }
         callback();
       }
@@ -153,12 +155,25 @@ class RuleCheckingStream extends Transform {
     }
   }
 
-  runAnomalyDetection(entry) {
+  runUserAgentAnomalyDetection(entry) {
     const ua = entry['RequestHeader User-agent'];
     const match = this._userAgentModel.get(ua, null, 0.1);
     if (!match || this._model.UserAgents[match[0][1]] < CONFIG.userAgentPrevalence) {
       this.push({ entry, severity: 'WARNING', message: `Unusual user agent detected "${ua}"` })
     }
+  }
+
+  runFilesizeAnomalyDetection(entry) {
+    const respSize = Number(entry['sizeCLF']);
+    if (isNaN(respSize)) return;
+    const fileExt = path.extname(entry.request.split('?')[0]);
+    const {mean, stdDeviation} = this._model.FileExtSizes[fileExt];
+    const threshold = stdDeviation * Math.sqrt(100 / (100 - CONFIG.filesizeAlertPercentile));
+    if (Math.abs(respSize - mean) > threshold) this.push({
+      entry,
+      severity: 'WARNING',
+      message: `Unusual file size (${respSize}) for file of type ${fileExt}`
+    });
   }
 }
 

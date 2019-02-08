@@ -2,5 +2,6 @@
   "whitelistedIPs": [],
   "userAgentPrevalence": 0.001,
   "maxRequestsPerSecond": 100,
-  "enableAnomalyDetection": true
+  "enableAnomalyDetection": true,
+  "filesizeAlertPercentile": 99.9
 }
