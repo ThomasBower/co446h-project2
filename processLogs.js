@@ -87,7 +87,7 @@ class ObjectToLogOutputTransformStream extends Transform {
 
 
 class RuleCheckingStream extends Transform {
-  constructor(rules, model) {
+  constructor(rules, model, model2) {
     super({
       objectMode: true,
       transform(entry, encoding, callback) {
@@ -102,7 +102,9 @@ class RuleCheckingStream extends Transform {
     });
     this._rules = rules;
     this._model = model;
+    this._model2 = model2;
     this._userAgentModel = new FuzzySet(Object.keys(model.UserAgents));
+    this._userAgentModel2 = new FuzzySet(Object.keys(model2.UserAgents));
     this._countRequestsSeenThisSecond = 0;
     this._previousEntry = null;
   }
@@ -157,9 +159,17 @@ class RuleCheckingStream extends Transform {
 
   runUserAgentAnomalyDetection(entry) {
     const ua = entry['RequestHeader User-agent'];
+
+    // Model 1 - Checks for very different user-agent strings
     const match = this._userAgentModel.get(ua, null, 0.1);
-    if (!match || this._model.UserAgents[match[0][1]] < CONFIG.userAgentPrevalence) {
-      this.push({ entry, severity: 'WARNING', message: `Unusual user agent detected "${ua}"` })
+    if (!match || this._model.UserAgents[match[0][1]] < CONFIG.userAgentPrevalenceGeneral) {
+      this.push({entry, severity: 'WARNING', message: `Unusual user agent detected "${ua}"`});
+    }
+
+    // Model 2 - Checks for sightly wrong user-agent strings
+    const match2 = this._userAgentModel2.get(ua, null, 0.9);
+    if (!match2 || this._model2.UserAgents[match[0][1]] < CONFIG.userAgentPrevalenceSpecific) {
+      this.push({entry, severity: 'WARNING', message: `Unusual user agent detected "${ua}"`});
     }
   }
 
@@ -182,10 +192,14 @@ function processLogs(ruleFiles) {
   Promise.all(ruleFiles.map(f => fs.readFile(f, ENCODING)))
     .then(ruleSets => ruleSets.join('\n# FILE SEPARATOR #\n'))
     .then(parseRules)
-    .then(rules => Promise.all([rules, fs.readFile('model.json', ENCODING).then(JSON.parse)]))
-    .then(([rules, model]) => entryStream
+    .then(rules => Promise.all([
+      rules,
+      fs.readFile('model.json', ENCODING).then(JSON.parse),
+      fs.readFile('model2.json', ENCODING).then(JSON.parse)
+    ]))
+    .then(([rules, model, model2]) => entryStream
       .pipe(new IPWhiteListTransformStream())
-      .pipe(new RuleCheckingStream(rules, model))
+      .pipe(new RuleCheckingStream(rules, model, model2))
       .pipe(new ObjectToLogOutputTransformStream())
       .pipe(process.stdout)
     )
