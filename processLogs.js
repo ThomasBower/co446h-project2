@@ -102,9 +102,7 @@ class RuleCheckingStream extends Transform {
     this._model = model;
     this._model2 = model2;
     this._userAgentModel = new FuzzySet(Object.keys(model.UserAgents));
-<<<<<<< HEAD
     this._userAgentModel2 = new FuzzySet(Object.keys(model2.UserAgents));
-=======
     this._countRequestsSeenThisSecond = 0;
     this._previousEntry = null;
   }
@@ -124,7 +122,6 @@ class RuleCheckingStream extends Transform {
       this._countRequestsSeenThisSecond = 1;
     }
     this._previousEntry = entry;
->>>>>>> 5716669b24a06c28ff1ccb50ffa7edbb9ffb0e0e
   }
 
   runSignatureRules(entry) {
