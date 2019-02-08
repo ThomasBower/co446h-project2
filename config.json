@@ -1,5 +1,6 @@
 {
   "whitelistedIPs": [],
-  "userAgentPrevalence": 0.001,
+  "userAgentPrevalenceGeneral": 0.001,
+  "userAgentPrevalenceSpecific": 0.001,
   "enableAnomalyDetection": true
 }
