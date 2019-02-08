@@ -91,7 +91,7 @@ class RuleCheckingStream extends Transform {
       objectMode: true,
       transform(entry, encoding, callback) {
         this.runSignatureRules(entry);
-        this.runAnomalyDetection(entry);
+        if (CONFIG.enableAnomalyDetection) this.runAnomalyDetection(entry);
         callback();
       }
     });
