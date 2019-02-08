@@ -2,7 +2,7 @@
 
 const ApacheLogEntryStream = require('./apacheLogEntryStream');
 const fs = require('fs').promises;
-const fuzzyset = require('fuzzyset.js');
+const FuzzySet = require('fuzzyset.js');
 
 // Set up standard input encoding
 process.stdin.setEncoding('utf8');
@@ -12,7 +12,6 @@ const SIMILARITY_THRESHOLD = 0.8;
 
 const UserAgents = {};
 const UserAgentSet = FuzzySet();
-const blacklistedKeys = ['originalLine'];
 
 entryStream.on('data', e => {
   const userAgent = e['RequestHeader User-agent']
@@ -26,7 +25,6 @@ entryStream.on('data', e => {
 });
 
 entryStream.on('end', () => {
-  const NormalisedModel = Object.entries(UserAgents).map(([value, count]) => ({value, count}));
-  fs.writeFile('./model.json', JSON.stringify(NormalisedModel))
+  fs.writeFile('./model.json', JSON.stringify({ UserAgents }))
     .catch(error => console.error('Error when saving model:', error));
 });
