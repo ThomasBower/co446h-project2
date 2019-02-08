@@ -95,7 +95,6 @@ class RuleCheckingStream extends Transform {
         callback();
       }
     });
-    this._requestsPerSecond = 0;
     this._rules = rules;
     this._model = model;
     this._userAgentModel = new FuzzySet(Object.keys(model.UserAgents));
