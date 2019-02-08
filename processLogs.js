@@ -135,7 +135,7 @@ class RuleCheckingStream extends Transform {
   }
 
   runEndsWithRule(rule, entry) {
-    if (entry.request.split(' ')[1].split('?')[0].endsWith(rule.endsWith)) {
+    if ((entry.request.split(' ')[1] || '').split('?')[0].endsWith(rule.endsWith)) {
       this.push({
         ...rule,
         entry
