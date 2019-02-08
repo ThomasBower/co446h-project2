@@ -87,7 +87,7 @@ class ObjectToLogOutputTransformStream extends Transform {
 
 
 class RuleCheckingStream extends Transform {
-  constructor(rules, model, model2) {
+  constructor(rules, model) {
     super({
       objectMode: true,
       transform(entry, encoding, callback) {
@@ -102,9 +102,7 @@ class RuleCheckingStream extends Transform {
     });
     this._rules = rules;
     this._model = model;
-    this._model2 = model2;
     this._userAgentModel = new FuzzySet(Object.keys(model.UserAgents));
-    this._userAgentModel2 = new FuzzySet(Object.keys(model2.UserAgents));
     this._countRequestsSeenThisSecond = 0;
     this._previousEntry = null;
   }
@@ -165,18 +163,17 @@ class RuleCheckingStream extends Transform {
     if (!match || this._model.UserAgents[match[0][1]] < CONFIG.userAgentPrevalenceGeneral) {
       this.push({entry, severity: 'WARNING', message: `Unusual user agent detected "${ua}"`});
     }
-
     // Model 2 - Checks for sightly wrong user-agent strings
-    const match2 = this._userAgentModel2.get(ua, null, 0.9);
-    if (!match2 || this._model2.UserAgents[match[0][1]] < CONFIG.userAgentPrevalenceSpecific) {
-      this.push({entry, severity: 'WARNING', message: `Unusual user agent detected "${ua}"`});
+    const agentMatch = this._model.SpecificUserAgents[getGenericAgent(ua)];
+    if (agentMatch && agentMatch < CONFIG.userAgentPrevalenceSpecific) {
+      this.push({entry, severity: 'WARNING', message: `Unusual user agent detected (version masked) "${ua}"`});
     }
   }
 
   runFilesizeAnomalyDetection(entry) {
     const respSize = Number(entry['sizeCLF']);
     if (isNaN(respSize)) return;
-    const fileExt = path.extname(entry.request.split('?')[0]);
+    const fileExt = path.extname((entry.request.split(' ')[1] || '').split('?')[0]);
     const {mean, stdDeviation} = this._model.FileExtSizes[fileExt];
     const threshold = stdDeviation * Math.sqrt(100 / (100 - CONFIG.filesizeAlertPercentile));
     if (Math.abs(respSize - mean) > threshold) this.push({
@@ -192,20 +189,20 @@ function processLogs(ruleFiles) {
   Promise.all(ruleFiles.map(f => fs.readFile(f, ENCODING)))
     .then(ruleSets => ruleSets.join('\n# FILE SEPARATOR #\n'))
     .then(parseRules)
-    .then(rules => Promise.all([
-      rules,
-      fs.readFile('model.json', ENCODING).then(JSON.parse),
-      fs.readFile('model2.json', ENCODING).then(JSON.parse)
-    ]))
-    .then(([rules, model, model2]) => entryStream
+    .then(rules => Promise.all([rules, fs.readFile('model.json', ENCODING).then(JSON.parse)]))
+    .then(([rules, model]) => entryStream
       .pipe(new IPWhiteListTransformStream())
-      .pipe(new RuleCheckingStream(rules, model, model2))
+      .pipe(new RuleCheckingStream(rules, model))
       .pipe(new ObjectToLogOutputTransformStream())
       .pipe(process.stdout)
     )
     .catch(err => {
       console.error('Error occurred while processing rules: ', err);
     });
+}
+
+function getGenericAgent(userAgent) {
+  return userAgent.replace(/[.0-9]/g, "X").replace(/X+/g, "X");
 }
 
 // Read config
