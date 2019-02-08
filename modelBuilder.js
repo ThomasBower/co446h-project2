@@ -18,13 +18,13 @@ let lineCount = 0;
 entryStream.on('data', e => {
   lineCount++;
   const userAgent = e['RequestHeader User-agent'];
-  // const result = UserAgentSet.get(userAgent, null, SIMILARITY_THRESHOLD);
-  // if (result) {
-  //   UserAgents[result[0][1]]++;
-  // } else {
-  //   UserAgentSet.add(userAgent);
-  //   UserAgents[userAgent] = 1;
-  // }
+  const result = UserAgentSet.get(userAgent, null, SIMILARITY_THRESHOLD);
+  if (result) {
+    UserAgents[result[0][1]]++;
+  } else {
+    UserAgentSet.add(userAgent);
+    UserAgents[userAgent] = 1;
+  }
   const respSize = Number(e['sizeCLF']);
   if (isNaN(respSize)) return;
   const fileExt = path.extname(e.request.split(' ')[1].split('?')[0]);
