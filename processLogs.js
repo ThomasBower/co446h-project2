@@ -126,6 +126,7 @@ class RuleCheckingStream extends Transform {
         ...rule,
         regex: rule.regex.toString(),
         matches: matches,
+        entry
       });
     }
   }
