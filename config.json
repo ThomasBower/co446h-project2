@@ -1,4 +1,6 @@
 {
   "whitelistedIPs": [],
-  "maxRequestsPerSecond": 1
+  "userAgentPrevalence": 0.001,
+  "maxRequestsPerSecond": 100,
+  "enableAnomalyDetection": true
 }
