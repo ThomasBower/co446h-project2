@@ -3,7 +3,7 @@
 const fs = require('fs').promises;
 const readFileSync = require('fs').readFileSync;
 const { Transform } = require('stream');
-const ApacheLogEntryStream = require('./apacheLogEntryStream');
+const createLogObjStream = require('./createLogObjStream');
 const FuzzySet = require('fuzzyset.js');
 
 const ENCODING = 'utf8';
@@ -11,6 +11,7 @@ const NO_DATA_MESSAGE_TIMEOUT_MS = 2000;
 
 // Set up standard input encoding
 process.stdin.setEncoding(ENCODING);
+const entryStream = createLogObjStream(process.stdin);
 
 // Print message if no input is provided after a timeout
 let timeoutsElapsed = 0;
@@ -51,13 +52,6 @@ function getFirstMatch(regex, str, defaultVal = null) {
   return matches && matches.length > 0 ? matches[1] : defaultVal;
 }
 
-const severityScores = {
-  'CRITICAL': 3,
-  'ERROR': 2,
-  'WARNING': 1,
-  'NOTICE': 0
-};
-
 class IPWhiteListTransformStream extends Transform {
   constructor() {
     super({
@@ -78,9 +72,15 @@ class ObjectToLogOutputTransformStream extends Transform {
     super({
       writableObjectMode: true,
       transform(obj, encoding, callback) {
-        return callback(null, `${obj.entry.originalLine}"${severityScores[obj.severity || 'ERROR']}" "${obj.message || '[NO REASON FOUND]'}"\n\n`);
+        return callback(null, `${obj.entry.originalLine}"${this.severityScores[obj.severity || 'ERROR']}" "${obj.message || '[NO REASON FOUND]'}"\n\n`);
       }
     });
+    this.severityScores = {
+      'CRITICAL': 3,
+      'ERROR': 2,
+      'WARNING': 1,
+      'NOTICE': 0
+    };
   }
 }
 
@@ -133,15 +133,14 @@ class RuleCheckingStream extends Transform {
 
   runAnomalyDetection(entry) {
     const ua = entry['RequestHeader User-agent'];
-    const match = this._userAgentModel.get(ua, null, 0.7);
-    if (!match || this._model.UserAgents[match[0][1]] < CONFIG.userAgentGroupThreshold) {
+    const match = this._userAgentModel.get(ua, null, 0.1);
+    if (!match || this._model.UserAgents[match[0][1]] < CONFIG.userAgentPrevalence) {
       this.push({ entry, severity: 'WARNING', message: `Unusual user agent detected "${ua}"` })
     }
   }
 }
 
 function processLogs(ruleFiles) {
-  const entryStream = new ApacheLogEntryStream(process.stdin);
   // Load rule files and process
   Promise.all(ruleFiles.map(f => fs.readFile(f, ENCODING)))
     .then(ruleSets => ruleSets.join('\n# FILE SEPARATOR #\n'))
@@ -151,7 +150,8 @@ function processLogs(ruleFiles) {
       .pipe(new IPWhiteListTransformStream())
       .pipe(new RuleCheckingStream(rules, model))
       .pipe(new ObjectToLogOutputTransformStream())
-      .pipe(process.stdout))
+      .pipe(process.stdout)
+    )
     .catch(err => {
       console.error('Error occurred while processing rules: ', err);
     });

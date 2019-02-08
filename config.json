@@ -1,4 +1,4 @@
 {
   "whitelistedIPs": [],
-  "userAgentGroupThreshold": 10
+  "userAgentPrevalence": 0.001
 }

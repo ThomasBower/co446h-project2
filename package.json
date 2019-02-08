@@ -33,6 +33,7 @@
   "homepage": "https://github.com/ThomasBower/co446h-project2#readme",
   "dependencies": {
     "alpine": "^0.2.1",
+    "byline": "^5.0.0",
     "fuzzyset.js": "0.0.8"
   }
 }
