@@ -93,7 +93,7 @@ class RuleCheckingStream extends Transform {
         this.runSignatureRules(entry);
         if (CONFIG.enableAnomalyDetection) {
           this.ddosCheck(entry);
-          // this.runAnomalyDetection(entry);
+          this.runAnomalyDetection(entry);
         }
         callback();
       }
