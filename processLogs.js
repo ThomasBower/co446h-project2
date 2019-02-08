@@ -90,9 +90,6 @@ class RuleCheckingStream extends Transform {
       objectMode: true,
       transform(entry, encoding, callback) {
         this.ddosCheck(entry);
-        // if (this._requestsPerSecond > 1000) {
-        //   this.push({ ...entry, severity: 'CRITICAL', message: 'Possible DDOS - Requests per second exceeds threshold' });
-        // }
         this.runRules(entry).forEach(matchedRule => this.push(matchedRule));
         const detectionResult = this.runAnomalyDetection(entry);
         if (detectionResult) this.push(detectionResult);
