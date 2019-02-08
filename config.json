@@ -2,5 +2,6 @@
   "whitelistedIPs": [],
   "userAgentPrevalenceGeneral": 0.001,
   "userAgentPrevalenceSpecific": 0.001,
+  "maxRequestsPerSecond": 100,
   "enableAnomalyDetection": true
 }

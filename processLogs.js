@@ -91,7 +91,10 @@ class RuleCheckingStream extends Transform {
       objectMode: true,
       transform(entry, encoding, callback) {
         this.runSignatureRules(entry);
-        if (CONFIG.enableAnomalyDetection) this.runAnomalyDetection(entry);
+        if (CONFIG.enableAnomalyDetection) {
+          this.ddosCheck(entry);
+          // this.runAnomalyDetection(entry);
+        }
         callback();
       }
     });
@@ -99,7 +102,29 @@ class RuleCheckingStream extends Transform {
     this._model = model;
     this._model2 = model2;
     this._userAgentModel = new FuzzySet(Object.keys(model.UserAgents));
+<<<<<<< HEAD
     this._userAgentModel2 = new FuzzySet(Object.keys(model2.UserAgents));
+=======
+    this._countRequestsSeenThisSecond = 0;
+    this._previousEntry = null;
+  }
+
+  // Assumes the timestamp is accurate to the nearest second
+  ddosCheck(entry) {
+    if (this._previousEntry && this._previousEntry.time === entry.time) {
+      this._countRequestsSeenThisSecond++;
+    } else {
+      if (this._countRequestsSeenThisSecond > CONFIG.maxRequestsPerSecond) {
+        this.push({
+          entry: this._previousEntry,
+          severity: 'CRITICAL',
+          message: `Possible (D)DoS (last request of flood reported) - ${this._countRequestsSeenThisSecond} requests per second.`
+        })
+      }
+      this._countRequestsSeenThisSecond = 1;
+    }
+    this._previousEntry = entry;
+>>>>>>> 5716669b24a06c28ff1ccb50ffa7edbb9ffb0e0e
   }
 
   runSignatureRules(entry) {
